@@ -2,6 +2,7 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import { CalendarDaysIcon, LayoutGridIcon, PlusIcon, SendIcon, SettingsIcon, BoxIcon } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { config } from "../../lib/config";
 import { MailFlowLogo } from "../brand/MailFlowLogo";
 import { UserMenu } from "./UserMenu";
 import { User } from "../../types/user";
@@ -76,6 +77,20 @@ export function Sidebar({
             <Icon className="h-4 w-4 text-ink-placeholder" strokeWidth={1.75} aria-hidden="true" />
             {label}
           </button>)}
+      </div>
+
+      <div className="border-t border-line-light px-4 py-2.5">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-ink-muted">
+          <span
+            className={cn(
+              'h-2 w-2 rounded-full',
+              config.apiBaseUrl ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+            )}
+          />
+          <span className="truncate">
+            {config.apiBaseUrl ? 'Live Backend API' : 'Prototype Sandbox'}
+          </span>
+        </div>
       </div>
 
       <div className="border-t border-line-light p-3">
