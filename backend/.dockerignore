@@ -1,6 +1,5 @@
 node_modules
 */node_modules
-*/*/node_modules
 dist
 */dist
 .git
@@ -10,7 +9,6 @@ dist
 *.local
 .vscode
 .idea
-backend
 Dockerfile*
 docker-compose*
 compose*

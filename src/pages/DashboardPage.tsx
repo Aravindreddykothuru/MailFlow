@@ -1,5 +1,5 @@
 import React from 'react';
-import { DashboardScreen } from '../features/dashboard/DashboardScreen';
+import { DashboardScreen } from '../features/dashboard';
 
 /** Route: /dashboard */
 export function DashboardPage() {
