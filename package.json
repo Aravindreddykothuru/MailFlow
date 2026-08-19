@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "npx vite",
-    "dev": "npx vite",
-    "build": "npx vite build",
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview --host 0.0.0.0 --port 3000",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "preview": "npx vite preview",
+    "preview": "vite preview",
     "backend:dev": "npm run dev --prefix backend",
     "backend:build": "npm run build --prefix backend",
-    "backend:test": "npm test --prefix backend"
+    "backend:test": "npm test --prefix backend",
+    "backend:start": "npm start --prefix backend",
+    "backend:worker": "npm run start:worker --prefix backend"
   },
 
   "dependencies": {
