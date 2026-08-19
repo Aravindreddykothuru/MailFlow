@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addMinutes, format } from 'date-fns';
 import { scheduleEmails } from '../services/emailService';
+import { fetchSenders } from '../services/senderService';
 import { ApiError } from '../types/api';
-import type { ScheduleResponse } from '../types/email';
+import type { ScheduleResponse, Sender } from '../types/email';
 import { useRecipientFile, type RecipientFileState } from './useRecipientFile';
 
 export interface ComposeValues {
@@ -11,14 +12,15 @@ export interface ComposeValues {
   startAt: string;
   delaySeconds: string;
   hourlyLimit: string;
+  senderId: string;
 }
 
 export type ComposeField = keyof ComposeValues;
 export type ComposeErrors = Partial<Record<ComposeField | 'recipients', string>>;
 
 type SubmitResult =
-{ok: true;data: ScheduleResponse;} |
-{ok: false;message: string;};
+  | { ok: true; data: ScheduleResponse }
+  | { ok: false; message: string };
 
 function defaultStartAt(): string {
   // Default to 2 minutes in the future so test sends trigger quickly
@@ -27,22 +29,21 @@ function defaultStartAt(): string {
 
 const DELAY_PRESETS = ['5', '10', '15', '30', '45', '60', '120', '300'];
 
-
 export const delayOptions = DELAY_PRESETS.map((value) => ({
   value,
-  label: `${value} seconds`
+  label: `${value} seconds`,
 }));
 
 export const hourlyLimitOptions = ['25', '50', '100', '250', '500'].map((value) => ({
   value,
-  label: `${value} emails / hour`
+  label: `${value} emails / hour`,
 }));
 
 function validate(values: ComposeValues, recipientCount: number): ComposeErrors {
   const errors: ComposeErrors = {};
 
-  if (!values.subject.trim()) errors.subject = 'A subject line is required.';else
-  if (values.subject.trim().length < 3) errors.subject = 'Use at least 3 characters.';
+  if (!values.subject.trim()) errors.subject = 'A subject line is required.';
+  else if (values.subject.trim().length < 3) errors.subject = 'Use at least 3 characters.';
 
   if (!values.body.trim()) errors.body = 'The email body is required.';
 
@@ -55,12 +56,12 @@ function validate(values: ComposeValues, recipientCount: number): ComposeErrors 
   }
 
   const delay = Number(values.delaySeconds);
-  if (!values.delaySeconds) errors.delaySeconds = 'Set a delay between emails.';else
-  if (!Number.isFinite(delay) || delay < 1) errors.delaySeconds = 'Must be at least 1 second.';
+  if (!values.delaySeconds) errors.delaySeconds = 'Set a delay between emails.';
+  else if (!Number.isFinite(delay) || delay < 1) errors.delaySeconds = 'Must be at least 1 second.';
 
   const limit = Number(values.hourlyLimit);
-  if (!values.hourlyLimit) errors.hourlyLimit = 'Set an hourly sending limit.';else
-  if (!Number.isFinite(limit) || limit < 1) errors.hourlyLimit = 'Must be at least 1 email.';
+  if (!values.hourlyLimit) errors.hourlyLimit = 'Set an hourly sending limit.';
+  else if (!Number.isFinite(limit) || limit < 1) errors.hourlyLimit = 'Must be at least 1 email.';
 
   return errors;
 }
@@ -68,6 +69,7 @@ function validate(values: ComposeValues, recipientCount: number): ComposeErrors 
 export interface ComposeFormState {
   values: ComposeValues;
   errors: ComposeErrors;
+  senders: Sender[];
   setValue: (field: ComposeField, value: string) => void;
   touch: (field: ComposeField) => void;
   visibleError: (field: ComposeField | 'recipients') => string | undefined;
@@ -84,11 +86,22 @@ export function useComposeForm(): ComposeFormState {
     body: '',
     startAt: defaultStartAt(),
     delaySeconds: '45',
-    hourlyLimit: '50'
+    hourlyLimit: '50',
+    senderId: '',
   });
+  const [senders, setSenders] = useState<Sender[]>([]);
   const [touched, setTouched] = useState<Partial<Record<ComposeField | 'recipients', boolean>>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchSenders().then((list) => {
+      setSenders(list);
+      if (list.length > 0 && !values.senderId) {
+        setValues((curr) => ({ ...curr, senderId: list[0].id }));
+      }
+    });
+  }, []);
 
   const recipientFile = useRecipientFile();
   const recipientCount = recipientFile.parsed?.validEmails.length ?? 0;
@@ -105,8 +118,8 @@ export function useComposeForm(): ComposeFormState {
 
   const visibleError = useCallback(
     (field: ComposeField | 'recipients') =>
-    submitAttempted || touched[field] ? errors[field] : undefined,
-    [errors, touched, submitAttempted]
+      submitAttempted || touched[field] ? errors[field] : undefined,
+    [errors, touched, submitAttempted],
   );
 
   const canSubmit = Object.keys(errors).length === 0 && recipientFile.status === 'success';
@@ -125,16 +138,17 @@ export function useComposeForm(): ComposeFormState {
         recipients: recipientFile.parsed.validEmails,
         startAt: new Date(values.startAt).toISOString(),
         delaySeconds: Number(values.delaySeconds),
-        hourlyLimit: Number(values.hourlyLimit)
+        hourlyLimit: Number(values.hourlyLimit),
+        senderId: values.senderId || undefined,
       });
       return { ok: true, data };
     } catch (caught) {
       return {
         ok: false,
         message:
-        caught instanceof ApiError ?
-        caught.message :
-        'We couldn’t schedule this campaign. Please try again.'
+          caught instanceof ApiError
+            ? caught.message
+            : 'We couldn’t schedule this campaign. Please try again.',
       };
     } finally {
       setIsSubmitting(false);
@@ -144,6 +158,7 @@ export function useComposeForm(): ComposeFormState {
   return {
     values,
     errors,
+    senders,
     setValue,
     touch,
     visibleError,
@@ -151,6 +166,6 @@ export function useComposeForm(): ComposeFormState {
     recipientCount,
     canSubmit,
     isSubmitting,
-    submit
+    submit,
   };
 }

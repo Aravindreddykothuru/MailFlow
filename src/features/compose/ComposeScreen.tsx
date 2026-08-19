@@ -54,6 +54,7 @@ export function ComposeScreen() {
 
         <SchedulingSection
           values={form.values}
+          senders={form.senders}
           onChange={form.setValue}
           onBlur={form.touch}
           visibleError={form.visibleError}
