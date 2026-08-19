@@ -7,6 +7,15 @@
 [![BullMQ](https://img.shields.io/badge/BullMQ-Redis%20Queue-red.svg)]()
 [![Prisma](https://img.shields.io/badge/Prisma-PostgreSQL-teal.svg)]()
 
+## 🌐 Live Deployment Links
+
+| Component | Host Link | Status |
+|---|---|---|
+| **Frontend UI (Vercel)** | **[https://mailflow-brown.vercel.app/](https://mailflow-brown.vercel.app/)** | 🟢 Live |
+| **Backend API (Railway)** | **[https://bountiful-learning-production-8653.up.railway.app](https://bountiful-learning-production-8653.up.railway.app)** | 🟢 Live |
+| **Health Probe** | **[https://bountiful-learning-production-8653.up.railway.app/health](https://bountiful-learning-production-8653.up.railway.app/health)** | 🟢 Healthy |
+| **GitHub Repository** | **[https://github.com/Aravindreddykothuru/MailFlow](https://github.com/Aravindreddykothuru/MailFlow)** | 🟢 Public / Evaluator Ready |
+
 ---
 
 ## 🏗️ System Architecture

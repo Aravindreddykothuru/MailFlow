@@ -2,6 +2,13 @@
 
 Production-grade email job scheduler with a React dashboard (already built) backed by an Express + BullMQ + PostgreSQL + Redis service.
 
+## 🌐 Live Deployment Links
+
+- **Backend API (Railway):** [https://bountiful-learning-production-8653.up.railway.app](https://bountiful-learning-production-8653.up.railway.app)
+- **Health Check:** [https://bountiful-learning-production-8653.up.railway.app/health](https://bountiful-learning-production-8653.up.railway.app/health)
+- **Frontend Dashboard (Vercel):** [https://mailflow-brown.vercel.app/](https://mailflow-brown.vercel.app/)
+- **GitHub Repository:** [https://github.com/Aravindreddykothuru/MailFlow](https://github.com/Aravindreddykothuru/MailFlow)
+
 ---
 
 ## Architecture
