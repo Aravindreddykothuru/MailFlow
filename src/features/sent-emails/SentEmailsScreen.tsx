@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { EyeIcon, MailIcon } from 'lucide-react';
+import { EyeIcon, MailIcon, ExternalLink } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
@@ -89,19 +89,33 @@ export function SentEmailsScreen() {
   {
     key: 'actions',
     header: 'Actions',
-    width: '6%',
+    width: '8%',
     align: 'right',
     srOnlyHeader: true,
-    cell: (row) =>
-    <button
-      type="button"
-      onClick={() => setSelected(row)}
-      aria-label={`View delivery details for ${row.email}`}
-      className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-placeholder transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-ink">
-      
+    cell: (row) => (
+      <div className="flex items-center justify-end gap-1">
+        {row.previewUrl && row.previewUrl.startsWith('http') && (
+          <a
+            href={row.previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open email in Ethereal Sandbox"
+            aria-label={`Open Ethereal preview for ${row.email}`}
+            className="flex h-7 w-7 items-center justify-center rounded-sm text-primary transition-colors duration-150 ease-out hover:bg-primary/10"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={() => setSelected(row)}
+          aria-label={`View delivery details for ${row.email}`}
+          className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-placeholder transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-ink"
+        >
           <EyeIcon className="h-4 w-4" aria-hidden="true" />
         </button>
-
+      </div>
+    )
   }];
 
 

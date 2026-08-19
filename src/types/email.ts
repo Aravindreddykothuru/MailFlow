@@ -20,6 +20,8 @@ export interface SentEmail extends EmailRecord {
   /** ISO 8601 timestamp. */
   sentAt: string;
   status: SentEmailStatus;
+  /** Browser URL to view email on Ethereal test inbox or delivery confirmation. */
+  previewUrl?: string;
   /** Present only when status is "Failed". */
   failureReason?: string;
 }

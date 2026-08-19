@@ -77,6 +77,7 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       data: {
         status: 'SENT',
         sentAt: new Date(),
+        previewUrl: result.previewUrl || (result.isRealDelivery ? 'REAL_DELIVERY' : null),
       },
     });
 

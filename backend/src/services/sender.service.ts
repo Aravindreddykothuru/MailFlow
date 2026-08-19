@@ -29,10 +29,25 @@ export async function sendViaEthereal(options: SendOptions): Promise<SendResult>
   const { etherealUser, etherealPass, from, to, subject, html } = options;
 
   const isRealSmtp = Boolean(config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS);
+  const isGmail = config.SMTP_HOST.toLowerCase().includes('gmail');
   const isSecure = config.SMTP_PORT === 465 || config.SMTP_SECURE === true;
 
-  const transporter = isRealSmtp
-    ? nodemailer.createTransport({
+  let transporter: nodemailer.Transporter;
+
+  if (isRealSmtp) {
+    if (isGmail) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: config.SMTP_USER,
+          pass: config.SMTP_PASS,
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      });
+    } else {
+      transporter = nodemailer.createTransport({
         host: config.SMTP_HOST,
         port: config.SMTP_PORT,
         secure: isSecure,
@@ -40,17 +55,28 @@ export async function sendViaEthereal(options: SendOptions): Promise<SendResult>
           user: config.SMTP_USER,
           pass: config.SMTP_PASS,
         },
-      })
-
-    : nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: etherealUser,
-          pass: etherealPass,
+        tls: {
+          rejectUnauthorized: false,
         },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
       });
+    }
+  } else {
+    transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false,
+      auth: {
+        user: etherealUser,
+        pass: etherealPass,
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+    });
+  }
 
   const fromAddress = isRealSmtp && config.SMTP_FROM_EMAIL
     ? `"${config.SMTP_FROM_NAME}" <${config.SMTP_FROM_EMAIL}>`
@@ -64,7 +90,8 @@ export async function sendViaEthereal(options: SendOptions): Promise<SendResult>
     text: html.replace(/<[^>]+>/g, ''), // Plain-text fallback stripped of tags
   });
 
-  const previewUrl = nodemailer.getTestMessageUrl(info) || undefined;
+  const rawPreviewUrl = nodemailer.getTestMessageUrl(info);
+  const previewUrl = rawPreviewUrl ? String(rawPreviewUrl) : undefined;
 
   logger.info(
     {

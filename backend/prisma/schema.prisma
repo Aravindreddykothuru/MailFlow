@@ -72,6 +72,7 @@ model ScheduledEmail {
   scheduledAt    DateTime
   status         EmailStatus @default(PENDING)
   sentAt         DateTime?
+  previewUrl     String?
   errorMessage   String?
   createdAt      DateTime    @default(now())
 

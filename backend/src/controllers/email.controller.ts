@@ -136,6 +136,7 @@ export async function getSentEmails(
           recipientEmail: true,
           sentAt: true,
           status: true,
+          previewUrl: true,
           errorMessage: true,
           campaign: { select: { subject: true } },
         },
@@ -156,6 +157,7 @@ export async function getSentEmails(
       subject: row.campaign.subject,
       sentAt: (row.sentAt ?? new Date()).toISOString(),
       status: mapStatus(row.status),
+      ...(row.previewUrl ? { previewUrl: row.previewUrl } : {}),
       ...(row.errorMessage ? { failureReason: row.errorMessage } : {}),
     }));
 
