@@ -175,3 +175,4 @@ MailFlow/
 
 ## 📄 License
 MIT
+ 'n## CodeRabbit Test'nTesting automated PR review.
