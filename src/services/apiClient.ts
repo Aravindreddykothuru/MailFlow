@@ -15,32 +15,62 @@ export function setAuthToken(token: string | null): void {
 }
 
 /**
- * Single network entry point. Every service function goes through here, so
- * swapping the transport (fetch → Next.js server action, tRPC, …) is a
- * one-file change.
+ * Single network entry point. Every service function goes through here.
+ * Includes automated fallback between standard and /api/ prefixes.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (!config.apiBaseUrl) {
     throw new ApiError({
       code: 'API_NOT_CONFIGURED',
-      message: 'No API base URL configured.'
+      message: 'Backend URL is not configured. Running in sandbox mode.'
     });
   }
 
-  const response = await fetch(`${config.apiBaseUrl}${path}`, {
-    method: options.method ?? 'GET',
-    signal: options.signal,
-    // Required for httpOnly cookie-based auth to work cross-origin.
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body)
-  });
+  const baseUrl = config.apiBaseUrl.replace(/\/+$/, '');
+  const targetUrl = `${baseUrl}${path}`;
+
+  let response: Response;
+
+  try {
+    response = await fetch(targetUrl, {
+      method: options.method ?? 'GET',
+      signal: options.signal,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+    });
+
+    // If 404 on standard path, automatically try /api prefix fallback
+    if (response.status === 404 && !path.startsWith('/api') && !path.includes('.')) {
+      try {
+        const fallbackRes = await fetch(`${baseUrl}/api${path}`, {
+          method: options.method ?? 'GET',
+          signal: options.signal,
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+          },
+          body: options.body === undefined ? undefined : JSON.stringify(options.body)
+        });
+        if (fallbackRes.ok || fallbackRes.status === 401 || fallbackRes.status === 400 || fallbackRes.status === 409) {
+          response = fallbackRes;
+        }
+      } catch {
+        // Keep original response
+      }
+    }
+  } catch (err) {
+    throw new ApiError({
+      code: 'NETWORK_ERROR',
+      message: `Could not connect to backend at ${baseUrl}. Please check that your backend is running.`
+    });
+  }
 
   if (response.status === 401) {
-    // Only dispatch auth:expired on authenticated action routes (not on initial /auth/me checks or login form)
     if (path !== '/auth/me' && path !== '/me' && path !== '/auth/login' && path !== '/auth/register') {
       window.dispatchEvent(new CustomEvent('auth:expired'));
     }
@@ -53,9 +83,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     });
   }
 
-
   if (!response.ok) {
-    // Try to parse a structured error from the backend first.
     let errorData: { error?: { code?: string; message?: string } } = {};
     try { errorData = await response.json(); } catch { /* non-JSON body */ }
     throw new ApiError({
