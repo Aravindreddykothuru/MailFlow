@@ -67,16 +67,29 @@ app.use(cookieParser());
 configureGoogleStrategy();
 app.use(passport.initialize());
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── Routes (support both /path and /api/path prefixes) ────────────────────────
 app.use('/auth', authRouter);
-app.use('/campaigns', campaignRouter);
-app.use('/emails', emailRouter);
-app.use('/senders', senderRouter);
-app.get('/me', requireAuth, getMe);
+app.use('/api/auth', authRouter);
 
+app.use('/campaigns', campaignRouter);
+app.use('/api/campaigns', campaignRouter);
+
+app.use('/emails', emailRouter);
+app.use('/api/emails', emailRouter);
+
+app.use('/senders', senderRouter);
+app.use('/api/senders', senderRouter);
+
+app.get('/me', requireAuth, getMe);
+app.get('/api/me', requireAuth, getMe);
+app.get('/auth/me', requireAuth, getMe);
+app.get('/api/auth/me', requireAuth, getMe);
 
 // Health check — useful for Docker and load-balancer probes.
 app.get('/health', (_req, res) => {
+  res.json({ ok: true, data: { status: 'healthy', ts: new Date().toISOString() } });
+});
+app.get('/api/health', (_req, res) => {
   res.json({ ok: true, data: { status: 'healthy', ts: new Date().toISOString() } });
 });
 

@@ -26,7 +26,7 @@ function readEnv(key: string): string | undefined {
 
 export const config = {
   /** Base URL of the email-scheduling API. Empty in the prototype. */
-  apiBaseUrl: readEnv('API_BASE_URL') ?? '',
+  apiBaseUrl: (readEnv('API_BASE_URL') ?? '').replace(/\/+$/, ''),
   /** Google OAuth client id. Empty in the prototype. */
   googleClientId: readEnv('GOOGLE_CLIENT_ID') ?? '',
   /** Where the OAuth provider returns the user. */
