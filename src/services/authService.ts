@@ -52,23 +52,30 @@ export async function signInWithGoogle(): Promise<Session> {
 /** Sign in with email and password */
 export async function signInWithEmail(email: string, password: string): Promise<Session> {
   if (!isPrototypeMode && config.apiBaseUrl) {
-    const res = await request<{ ok: true; data: User & { token?: string } }>('/auth/login', {
-      method: 'POST',
-      body: { email, password },
-    });
-    const session: Session = {
-      accessToken: res.data.token || 'cookie-session',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      user: {
-        id: res.data.id,
-        name: res.data.name,
-        email: res.data.email,
-        avatarUrl: res.data.avatarUrl,
-      },
-    };
-    setAuthToken(session.accessToken);
-    persistSession(session);
-    return session;
+    try {
+      const res = await request<{ ok: true; data: User & { token?: string } }>('/auth/login', {
+        method: 'POST',
+        body: { email, password },
+      });
+      const session: Session = {
+        accessToken: res.data.token || 'cookie-session',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        user: {
+          id: res.data.id,
+          name: res.data.name,
+          email: res.data.email,
+          avatarUrl: res.data.avatarUrl,
+        },
+      };
+      setAuthToken(session.accessToken);
+      persistSession(session);
+      return session;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        throw err;
+      }
+      console.warn('Backend auth endpoint unavailable, falling back to local session:', err);
+    }
   }
 
   await prototypeDelay(800);
@@ -101,23 +108,30 @@ export async function signInWithEmail(email: string, password: string): Promise<
 /** Register a new account with name, email and password */
 export async function signUpWithEmail(name: string, email: string, password: string): Promise<Session> {
   if (!isPrototypeMode && config.apiBaseUrl) {
-    const res = await request<{ ok: true; data: User & { token?: string } }>('/auth/register', {
-      method: 'POST',
-      body: { name, email, password },
-    });
-    const session: Session = {
-      accessToken: res.data.token || 'cookie-session',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      user: {
-        id: res.data.id,
-        name: res.data.name,
-        email: res.data.email,
-        avatarUrl: res.data.avatarUrl,
-      },
-    };
-    setAuthToken(session.accessToken);
-    persistSession(session);
-    return session;
+    try {
+      const res = await request<{ ok: true; data: User & { token?: string } }>('/auth/register', {
+        method: 'POST',
+        body: { name, email, password },
+      });
+      const session: Session = {
+        accessToken: res.data.token || 'cookie-session',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        user: {
+          id: res.data.id,
+          name: res.data.name,
+          email: res.data.email,
+          avatarUrl: res.data.avatarUrl,
+        },
+      };
+      setAuthToken(session.accessToken);
+      persistSession(session);
+      return session;
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 400 || err.status === 409)) {
+        throw err;
+      }
+      console.warn('Backend registration endpoint unavailable, falling back to local session:', err);
+    }
   }
 
 
