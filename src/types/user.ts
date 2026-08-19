@@ -6,7 +6,8 @@ export interface User {
   avatarUrl?: string | null;
 }
 
-export type AuthStatus = 'unauthenticated' | 'authenticating' | 'authenticated' | 'error';
+export type AuthStatus = 'unauthenticated' | 'authenticating' | 'authenticated' | 'error' | 'loading';
+
 
 export interface Session {
   user: User;

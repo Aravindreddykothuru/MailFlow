@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User ────────────────────────────────────────────────────────────────────
+// One row per user account. Supports both Google OAuth and Email+Password.
+model User {
+  id           String   @id @default(uuid())
+  googleId     String?  @unique
+  name         String
+  email        String   @unique
+  passwordHash String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+
+  senders   Sender[]
+  campaigns Campaign[]
+}
+
+
+// ─── Sender ──────────────────────────────────────────────────────────────────
+// Represents an Ethereal SMTP account. A default sender is created on first
+// Google login. The Ethereal credentials (user + pass) are generated once and
+// stored so the same preview inbox is reused across sessions.
+model Sender {
+  id            String @id @default(uuid())
+  userId        String
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email         String
+  displayName   String
+  etherealUser  String
+  etherealPass  String
+
+  scheduledEmails ScheduledEmail[]
+}
+
+// ─── Campaign ────────────────────────────────────────────────────────────────
+// One campaign = one compose action (subject + body). Each campaign fans out
+// into N ScheduledEmail rows, one per recipient.
+model Campaign {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+
+  emails ScheduledEmail[]
+}
+
+// ─── ScheduledEmail ──────────────────────────────────────────────────────────
+// Source of truth for every email send. The BullMQ jobId equals this row's id
+// which provides idempotency: re-adding a job with the same id is a no-op.
+//
+// Status lifecycle: PENDING → SENT | FAILED
+// PENDING rows with scheduledAt > now() are used for boot reconciliation.
+model ScheduledEmail {
+  id             String      @id @default(uuid())
+  campaignId     String
+  campaign       Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         Sender      @relation(fields: [senderId], references: [id])
+  recipientEmail String
+  scheduledAt    DateTime
+  status         EmailStatus @default(PENDING)
+  sentAt         DateTime?
+  errorMessage   String?
+  createdAt      DateTime    @default(now())
+
+  // Compound index used by: GET /emails/scheduled, GET /emails/sent, reconciler
+  @@index([status, scheduledAt])
+  // Index for fast single-campaign queries
+  @@index([campaignId])
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}

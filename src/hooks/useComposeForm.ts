@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { addHours, format } from 'date-fns';
+import { addMinutes, format } from 'date-fns';
 import { scheduleEmails } from '../services/emailService';
 import { ApiError } from '../types/api';
 import type { ScheduleResponse } from '../types/email';
@@ -21,10 +21,12 @@ type SubmitResult =
 {ok: false;message: string;};
 
 function defaultStartAt(): string {
-  return format(addHours(new Date(), 1), "yyyy-MM-dd'T'HH:mm");
+  // Default to 2 minutes in the future so test sends trigger quickly
+  return format(addMinutes(new Date(), 2), "yyyy-MM-dd'T'HH:mm");
 }
 
-const DELAY_PRESETS = ['15', '30', '45', '60', '120', '300'];
+const DELAY_PRESETS = ['5', '10', '15', '30', '45', '60', '120', '300'];
+
 
 export const delayOptions = DELAY_PRESETS.map((value) => ({
   value,

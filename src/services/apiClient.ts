@@ -30,6 +30,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     method: options.method ?? 'GET',
     signal: options.signal,
+    // Required for httpOnly cookie-based auth to work cross-origin.
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
@@ -37,11 +39,29 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
   });
 
-  if (!response.ok) {
+  if (response.status === 401) {
+    // Only dispatch auth:expired on authenticated action routes (not on initial /auth/me checks or login form)
+    if (path !== '/auth/me' && path !== '/me' && path !== '/auth/login' && path !== '/auth/register') {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+    let errorData: { error?: { code?: string; message?: string } } = {};
+    try { errorData = await response.json(); } catch { /* non-JSON */ }
     throw new ApiError({
-      code: 'REQUEST_FAILED',
+      code: errorData.error?.code ?? 'UNAUTHENTICATED',
+      status: 401,
+      message: errorData.error?.message ?? (path === '/auth/login' ? 'Invalid email or password.' : 'Please sign in to continue.')
+    });
+  }
+
+
+  if (!response.ok) {
+    // Try to parse a structured error from the backend first.
+    let errorData: { error?: { code?: string; message?: string } } = {};
+    try { errorData = await response.json(); } catch { /* non-JSON body */ }
+    throw new ApiError({
+      code: errorData.error?.code ?? 'REQUEST_FAILED',
       status: response.status,
-      message: `Request to ${path} failed with status ${response.status}.`
+      message: errorData.error?.message ?? `Request to ${path} failed with status ${response.status}.`
     });
   }
 
