@@ -90,10 +90,12 @@ function setSessionCookie(res: Response, user: { id: string; email: string }): s
     { expiresIn: config.JWT_EXPIRES_IN as `${number}${'s' | 'm' | 'h' | 'd' | 'w' | 'y'}` },
   );
 
+  const isProd = process.env.NODE_ENV === 'production';
+
   res.cookie('session', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
