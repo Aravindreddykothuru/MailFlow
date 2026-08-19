@@ -50,12 +50,14 @@ async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   );
 
   if (!rateResult.allowed) {
-    const nextWindowMs = rateResult.nextWindowMs ?? 60 * 60 * 1000;
-    jobLog.warn({ nextWindowMs }, 'Rate limit exceeded — moving job to next hour window');
+    const nextTimestamp =
+      rateResult.nextHourTimestamp ??
+      Date.now() + (rateResult.nextWindowMs ?? 60 * 60 * 1000);
+    jobLog.warn({ nextTimestamp }, 'Rate limit exceeded — moving job to next hour window');
 
     // moveToDelayed pushes the job back into the delayed set rather than
     // failing it. The job retains its original jobId so it remains idempotent.
-    await job.moveToDelayed(Date.now() + nextWindowMs, job.token);
+    await job.moveToDelayed(nextTimestamp, job.token);
     return;
   }
 
