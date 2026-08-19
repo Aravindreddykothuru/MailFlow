@@ -102,9 +102,9 @@ async function boot(): Promise<void> {
     //    (no-op if Redis is healthy; self-heals if Redis was wiped).
     await reconcilePendingJobs();
 
-    // 4. Start HTTP server
-    const server = app.listen(config.PORT, () => {
-      logger.info({ port: config.PORT }, `Server listening`);
+    // 4. Start HTTP server listening on all interfaces (0.0.0.0) for Railway/cloud platforms
+    const server = app.listen(config.PORT, '0.0.0.0', () => {
+      logger.info({ port: config.PORT, host: '0.0.0.0' }, `Server listening on 0.0.0.0:${config.PORT}`);
     });
 
     // ── Graceful shutdown ────────────────────────────────────────────────────
