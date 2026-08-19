@@ -1,178 +1,255 @@
-# MailFlow 🚀
+# MailFlow — ReachInbox Email Scheduler 🚀
 
-> **Production-Grade Email Scheduling & Campaign Dispatcher** with crash-safe queueing, rate limiting, and real-time delivery tracking.
+> **Production-Grade Email Job Scheduler & Campaign Dispatcher** built with TypeScript, Express, BullMQ + Redis, PostgreSQL (Prisma), Nodemailer (Ethereal SMTP / Real SMTP), and a modern React dashboard.
+
+[![Tests](https://img.shields.io/badge/tests-17%20passed-brightgreen.svg)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)]()
+[![BullMQ](https://img.shields.io/badge/BullMQ-Redis%20Queue-red.svg)]()
+[![Prisma](https://img.shields.io/badge/Prisma-PostgreSQL-teal.svg)]()
 
 ---
 
 ## 🏗️ System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend (React + Vite)                  │
-│   • Email/Password & Google Auth   • Campaign Composer      │
-│   • Scheduled Emails Tracker       • Sent Emails Analytics  │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ HTTP / JSON API (:4000)
-┌──────────────────────────────▼──────────────────────────────┐
-│                  Backend (Express + TypeScript)             │
-│   • Auth & Session Management      • Campaign Orchestrator  │
-│   • Dual Token / Cookie Auth       • Hourly Rate Limiting   │
-└──────────────┬──────────────────────────────┬───────────────┘
-               │                              │
-┌──────────────▼──────────────┐┌──────────────▼───────────────┐
-│     PostgreSQL 16 (DB)      ││       Redis 7 (AOF)          │
-│   • Users, Senders          ││   • BullMQ Delayed Queue     │
-│   • Campaigns, Scheduled    ││   • Distributed Rate Limit   │
-│     Email Records           ││     Key: rate:{id}:{hour}    │
-└─────────────────────────────┘└──────────────┬───────────────┘
-                                              │ Worker Dispatch
-                               ┌──────────────▼───────────────┐
-                               │     Nodemailer Dispatcher    │
-                               │   • Gmail SMTP (STARTTLS)    │
-                               │   • Custom SMTP / Ethereal   │
-                               └──────────────┬───────────────┘
-                                              │ Public Internet
-                               ┌──────────────▼───────────────┐
-                               │    Recipient Email Inboxes   │
-                               └──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        React Frontend (Vite)                            │
+│   • Google OAuth & Email/Pass Auth    • CSV Lead List Parser (Client)   │
+│   • Campaign Composer & Sender Picker • Scheduled & Sent Email Trackers │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ HTTP + Session Cookie (credentials: 'include')
+┌────────────────────────────────────▼────────────────────────────────────┐
+│                    Express.js Backend API (:4000)                       │
+│   • Google OAuth & Cookie Sessions   • POST /campaigns/schedule         │
+│   • GET /emails/scheduled & /sent    • GET & POST /senders              │
+└──────────────────┬─────────────────────────────────┬────────────────────┘
+                   │ Prisma ORM                      │ ioredis
+┌──────────────────▼───────────────┐ ┌───────────────▼────────────────────┐
+│         PostgreSQL 16            │ │            Redis 7 (AOF)           │
+│  • Users, Senders                │ │  • BullMQ Delayed Job Queue        │
+│  • Campaigns, ScheduledEmails    │ │  • Atomic Rate Limiter Keys        │
+│    (Status: PENDING/SENT/FAILED) │ │    `rate:{senderId}:{YYYY-MM-DDTHH}`│
+└──────────────────────────────────┘ └───────────────┬────────────────────┘
+                                                     │
+                                     ┌───────────────▼────────────────────┐
+                                     │     Standalone BullMQ Worker       │
+                                     │  • Concurrency: WORKER_CONCURRENCY │
+                                     │  • Delay Limiter: MIN_DELAY_MS     │
+                                     │  • Idempotency & Status Check      │
+                                     │  • moveToDelayed(nextHour) on Cap  │
+                                     └───────────────┬────────────────────┘
+                                                     │ SMTP (STARTTLS)
+                                     ┌───────────────▼────────────────────┐
+                                     │   Ethereal SMTP / Real Outbound    │
+                                     │   • Auto-generated test accounts   │
+                                     │   • Preview URL extraction         │
+                                     └────────────────────────────────────┘
 ```
 
 ---
 
-## ⚡ Core Features
+## 🛡️ Key Architectural Guarantees
 
-- **Crash-Safe Queueing:** Uses Redis 7 with Append-Only File (`AOF`) persistence and a boot-time Postgres reconciler. If the server restarts, all pending jobs resume at their original scheduled times.
-- **Hourly Rate Limiter:** Multi-worker safe atomic Redis counters (`rate:{senderId}:{YYYY-MM-DDTHH}`). If a limit is exceeded, jobs are delayed to the next hour boundary without being dropped.
-- **Real SMTP Dispatch:** Connects directly via Gmail SMTP (`smtp.gmail.com:587` with STARTTLS) or custom SMTP with fallback to Ethereal sandbox.
-- **Authentication:** Email & Password authentication with secure `scrypt` hashing + Google OAuth.
-- **Modern UI:** Built with React 18, Vite, Tailwind CSS, Lucide icons, and responsive layouts.
+### 1. No Cron Dependency (Pure BullMQ Delay Scheduling)
+Scheduling is implemented entirely via BullMQ's native delayed job scheduler (`delay: scheduledAt - now`). No `node-cron`, `agenda`, or OS crontab is used anywhere in the codebase.
+
+### 2. Idempotency & Double-Processing Safety Net
+Double sends are prevented via a two-layer defense:
+1. **Queue Level (BullMQ `jobId`)**: Every `ScheduledEmail` database row UUID is used directly as the BullMQ `jobId`. BullMQ enforces unique job IDs within the queue; adding a job with an existing `jobId` is an automatic no-op.
+2. **Worker Level (Database Status Guard)**: Before dispatching, the worker re-checks `ScheduledEmail.status === 'PENDING'`. If already `SENT` or `FAILED` (e.g. from an edge-case Redis replay or duplicate invocation), the job is skipped immediately.
+
+### 3. Restart-Safety & Boot Reconciliation
+Redis is configured with Append-Only File (`AOF`) persistence (`appendonly yes`). Even if the Redis volume is flushed or the host crashes:
+- On every server/worker startup, `reconcilePendingJobs()` queries Postgres for all `PENDING` rows (`scheduledAt > now()` or missed past jobs).
+- Each row is re-added to BullMQ with `jobId = row.id`.
+- If the job is already active in Redis, BullMQ no-ops. If missing, it is seamlessly re-enqueued with the remaining delay (or `delay = 0` for immediate dispatch if its scheduled time elapsed while offline).
+
+### 4. Distributed Multi-Worker Rate Limiting
+Rate limiting operates across all worker instances using atomic Redis counters:
+- **Key Pattern**: `rate:{senderId}:{YYYY-MM-DDTHH}` (UTC hour window)
+- **TTL**: 1 hour (`expire(key, 3600)` on first write)
+- **Exceeded Action**: When a sender exceeds `MAX_EMAILS_PER_HOUR_PER_SENDER`, the worker calculates the exact Unix timestamp of the start of the next hour and calls `job.moveToDelayed(nextHourTimestamp, job.token)`. Jobs are **never dropped or marked failed**.
+
+### 5. Multi-Sender Support
+Users can manage multiple sender profiles via the `Sender` table (`GET /senders`, `POST /senders`). Each sender has isolated Ethereal SMTP test credentials and can be selected during campaign composition.
 
 ---
 
-## 🚀 Quick Start
+## 📈 Behavior Under Heavy Load (1,000+ Emails)
+
+When a bulk campaign with 1,000+ recipients is scheduled:
+1. **Database Fan-Out**: 1,000 `ScheduledEmail` rows are created with pre-calculated delay offsets and hourly window rollovers.
+2. **Queue Ingestion**: 1,000 BullMQ delayed jobs are created in parallel using row UUIDs as `jobId`.
+3. **Throttled Dispatch**:
+   - `WORKER_CONCURRENCY` controls how many emails process in parallel.
+   - BullMQ `limiter: { max: 1, duration: MIN_DELAY_MS }` guarantees a mandatory delay between individual email dispatches.
+4. **Hourly Cap Rollover**:
+   - If the sender's hourly limit is reached (e.g., 50/hr), any remaining active jobs are rescheduled to the next UTC hour window with `moveToDelayed()`.
+   - Redis counters automatically expire after 1 hour, resetting the window.
+
+To simulate 1,000+ emails locally:
+```bash
+cd backend
+npm run seed:load
+```
+
+---
+
+## 🚀 Quick Start (Local Setup)
 
 ### Prerequisites
-- [Node.js 20+](https://nodejs.org)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for PostgreSQL 16 & Redis 7)
+- Node.js 20+
+- Docker & Docker Compose
+- (Optional) Google Cloud OAuth Credentials
 
----
-
-### 1. Clone & Install Dependencies
-
-```bash
-git clone https://github.com/Aravindreddykothuru/MailFlow.git
-cd MailFlow
-
-# Install Frontend dependencies
-npm install
-
-# Install Backend dependencies
-cd backend
-npm install
-cd ..
-```
-
----
-
-### 2. Configure Environment Variables
-
-**Backend (`backend/.env`):**
-```bash
-cp backend/.env.example backend/.env
-```
-Edit `backend/.env` with your details:
-```env
-PORT=4000
-FRONTEND_URL=http://localhost:5173
-
-# Database & Redis (matches docker-compose.yml)
-DATABASE_URL=postgresql://mailflow:mailflow@localhost:5433/mailflow
-REDIS_URL=redis://localhost:6379
-
-# SMTP Configuration (e.g. Gmail)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_gmail_app_password
-SMTP_FROM_NAME="Aravind Reddy"
-SMTP_FROM_EMAIL=your_email@gmail.com
-
-JWT_SECRET=your-32-character-secret-key-goes-here
-```
-
-**Frontend (`.env.local`):**
-```env
-VITE_API_BASE_URL=http://localhost:4000
-```
-
----
-
-### 3. Start Database & Redis (Docker)
-
+### 1. Start Database & Redis via Docker
 ```bash
 cd backend
 docker compose up -d
-npx prisma db push
-cd ..
 ```
+This boots:
+- PostgreSQL 16 on port `5433` (or `5432`)
+- Redis 7 with AOF persistence on port `6379`
 
----
-
-### 4. Run Application
-
-In terminal 1 (Backend):
+### 2. Configure Backend `.env`
 ```bash
 cd backend
-npm run dev
+cp .env.example .env
+```
+Key settings in `backend/.env`:
+```env
+PORT=4000
+FRONTEND_URL=http://localhost:5173
+DATABASE_URL=postgresql://mailflow:mailflow@localhost:5433/mailflow
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=super-secure-mailflow-jwt-secret-min-32-chars
+WORKER_CONCURRENCY=3
+MIN_DELAY_MS=2000
+MAX_EMAILS_PER_HOUR_PER_SENDER=50
 ```
 
-In terminal 2 (Frontend):
+### 3. Run Prisma Database Migrations
 ```bash
+npm run db:push
+# or npm run db:migrate
+```
+
+### 4. Start the Application
+
+**Option A: Run with integrated worker (single process dev)**
+```bash
+# Terminal 1: Backend API + Worker
+cd backend
+npm run dev
+
+# Terminal 2: Frontend
+cd ..
 npm run dev
 ```
 
-Open **`http://localhost:5173`** in your browser!
+**Option B: Run as separate API and standalone worker processes**
+```bash
+# Terminal 1: Backend API
+cd backend
+npm run dev
+
+# Terminal 2: Standalone Worker Process
+cd backend
+npm run worker:dev
+
+# Terminal 3: Frontend (Vite)
+npm run dev
+```
+
+Open **`http://localhost:5173`** in your browser.
 
 ---
 
-## 🧪 Testing
+## 🧪 Automated Testing
 
-Run backend test suites (Rate limiter, Scheduler, Password Security):
+The backend includes a comprehensive Vitest test suite covering rate limiting, scheduler fanout, restart safety reconciliation, password hashing, and 1,000+ email load scaling.
+
 ```bash
 cd backend
 npm test
 ```
 
----
-
-## 📁 Repository Structure
-
-```
-MailFlow/
-├── src/                    # Frontend React + Vite application
-│   ├── components/         # UI components & design system
-│   ├── contexts/           # AuthContext & state providers
-│   ├── features/           # Auth, Compose, Scheduled, Sent screens
-│   ├── hooks/              # Form & scheduling hooks
-│   └── services/           # API Client & email service
-├── backend/                # Express + BullMQ Backend
-│   ├── prisma/             # PostgreSQL schema & migrations
-│   ├── src/
-│   │   ├── config/         # Environment & Zod validation
-│   │   ├── controllers/    # Auth, Campaign, Email endpoints
-│   │   ├── middlewares/    # Auth & error handling
-│   │   ├── queues/         # BullMQ queue definitions
-│   │   ├── services/       # SMTP Sender, Rate Limiter, Scrypt
-│   │   └── workers/        # BullMQ email worker & reconciler
-│   ├── docker-compose.yml  # PostgreSQL 16 + Redis 7 AOF
-│   └── package.json
-├── package.json
-└── README.md
-```
+Test coverage includes:
+- `rateLimiter.test.ts`: Atomic Redis INCR/EXPIRE, limit threshold, decrement on overflow, UTC key format.
+- `scheduling.test.ts`: Per-recipient delays, hourly overflow rollover, future time validation.
+- `reconciler.test.ts`: DB pending row re-enqueueing, past-delay recovery, `jobId` idempotency.
+- `loadBatch.test.ts`: 1,000+ recipient batch scheduling across multiple hour windows.
+- `password.test.ts`: Node crypto `scrypt` hashing and timing-safe verification.
 
 ---
 
-## 📄 License
-MIT
- 'n## CodeRabbit Test'nTesting automated PR review.
+## 🌐 API Reference
+
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|:---:|
+| `POST` | `/auth/register` | Email/password registration | No |
+| `POST` | `/auth/login` | Email/password login | No |
+| `GET` | `/auth/google` | Google OAuth redirect entry point | No |
+| `GET` | `/auth/google/callback` | Google OAuth code exchange & cookie session | No |
+| `POST` | `/auth/logout` | Clears session cookie | Yes |
+| `GET` | `/me` / `/auth/me` | Fetch authenticated user profile | Yes |
+| `GET` | `/senders` | List all senders for authenticated user | Yes |
+| `POST` | `/senders` | Create new sender with Ethereal SMTP account | Yes |
+| `DELETE` | `/senders/:id` | Remove a sender profile | Yes |
+| `POST` | `/campaigns/schedule` | Schedule campaign & fan out BullMQ jobs | Yes |
+| `GET` | `/emails/scheduled` | Paginated upcoming emails (`?page=&limit=&status=`) | Yes |
+| `GET` | `/emails/sent` | Paginated sent/failed emails (`?page=&limit=&status=`) | Yes |
+| `DELETE` | `/emails/scheduled/:id`| Cancel scheduled email & remove from queue | Yes |
+| `GET` | `/health` | Service health status check | No |
+
+---
+
+## ☁️ Live Deployment Guide
+
+### 1. Backend + Worker + Redis + Postgres (Render / Railway)
+
+1. **Postgres & Redis**: Provision managed PostgreSQL and Redis on Railway or Render.
+2. **Web Service (API)**:
+   - Build Command: `cd backend && npm install && npx prisma generate && npm run build`
+   - Start Command: `cd backend && npx prisma migrate deploy && npm run start`
+3. **Background Worker (Separate Service)**:
+   - Same repository.
+   - Start Command: `cd backend && npm run start:worker`
+4. **Environment Variables**:
+   - `DATABASE_URL`: Managed Postgres connection string
+   - `REDIS_URL`: Managed Redis connection string
+   - `FRONTEND_URL`: URL of deployed frontend (e.g. `https://mailflow-app.vercel.app`)
+   - `JWT_SECRET`: Random 32+ character string
+   - `GOOGLE_CLIENT_ID` & `GOOGLE_CLIENT_SECRET`: From Google Cloud Console
+   - `GOOGLE_CALLBACK_URL`: `https://<your-backend-api-url>/auth/google/callback`
+
+### 2. Frontend (Vercel)
+
+1. Connect GitHub repository to Vercel.
+2. Framework Preset: **Vite**.
+3. Environment Variables:
+   - `VITE_API_BASE_URL`: `https://<your-backend-api-url>`
+4. Deploy!
+
+---
+
+## 👥 GitHub Repository & Collaborators
+
+To grant collaborator access to the project reviewers:
+1. Navigate to your repository on GitHub: `Settings` → `Collaborators`.
+2. Click **Add people** and invite:
+   - **`Mitrajit`**
+   - **`Yadav036`**
+3. Or via GitHub CLI:
+   ```bash
+   gh api repos/:owner/:repo/collaborators/Mitrajit -X PUT
+   gh api repos/:owner/:repo/collaborators/Yadav036 -X PUT
+   ```
+
+---
+
+## ⚖️ Assumptions & Trade-offs
+
+1. **Email Preview**: By default, Ethereal SMTP accounts are auto-provisioned per sender for instant testability without requiring personal email credentials. If `SMTP_HOST`, `SMTP_USER`, and `SMTP_PASS` are provided, the system seamlessly transitions to real external SMTP delivery.
+2. **Job Idempotency Key**: Using the Postgres `ScheduledEmail.id` (UUID) as the BullMQ `jobId` guarantees deduplication at both the DB and Redis layers.
+3. **Hourly Quota Handling**: Rather than dropping or rejecting jobs when a rate limit is exceeded, jobs are gracefully delayed to the next hour boundary with `moveToDelayed()`.

@@ -4,19 +4,30 @@ import { scheduleEmailBatch } from '../services/scheduling.service';
 import { logger } from '../config/logger';
 
 // ─── Validation Schema ────────────────────────────────────────────────────────
-// Matches the frontend's ScheduleRequest type + backend-only fields.
-// senderId is intentionally omitted — auto-resolved to the user's default sender.
+// Accepts standard field names and common aliases (startTime/startAt, delayMs/delaySeconds, optional senderId)
 
-const scheduleSchema = z.object({
-  subject: z.string().min(3, 'Subject must be at least 3 characters'),
-  body: z.string().min(1, 'Body is required'),
-  recipients: z
-    .array(z.string().email('Invalid email address'))
-    .min(1, 'At least one recipient is required'),
-  startAt: z.string().datetime({ message: 'startAt must be a valid ISO 8601 datetime' }),
-  delaySeconds: z.number().int().min(1, 'delaySeconds must be at least 1'),
-  hourlyLimit: z.number().int().min(1, 'hourlyLimit must be at least 1'),
-});
+const scheduleSchema = z
+  .object({
+    subject: z.string().min(1, 'Subject is required'),
+    body: z.string().min(1, 'Body is required'),
+    recipients: z
+      .array(z.string().email('Invalid email address'))
+      .min(1, 'At least one recipient is required'),
+    startAt: z.string().optional(),
+    startTime: z.string().optional(),
+    delaySeconds: z.number().int().positive().optional(),
+    delayMs: z.number().int().positive().optional(),
+    hourlyLimit: z.number().int().positive().default(50),
+    senderId: z.string().optional(),
+  })
+  .refine((data) => Boolean(data.startAt || data.startTime), {
+    message: 'Either startAt or startTime (ISO 8601 datetime) is required',
+    path: ['startAt'],
+  })
+  .refine((data) => data.delaySeconds !== undefined || data.delayMs !== undefined, {
+    message: 'Either delaySeconds or delayMs is required',
+    path: ['delaySeconds'],
+  });
 
 // ─── Controller ───────────────────────────────────────────────────────────────
 
@@ -32,20 +43,24 @@ export async function scheduleCampaign(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const body = scheduleSchema.parse(req.body);
+    const raw = scheduleSchema.parse(req.body);
+
+    const startAt = raw.startAt ?? raw.startTime!;
+    const delayMs = raw.delayMs ?? (raw.delaySeconds! * 1000);
 
     const result = await scheduleEmailBatch({
       userId: req.userId,
-      subject: body.subject,
-      body: body.body,
-      recipients: body.recipients,
-      startAt: body.startAt,
-      delayMs: body.delaySeconds * 1000,
-      hourlyLimit: body.hourlyLimit,
+      senderId: raw.senderId,
+      subject: raw.subject,
+      body: raw.body,
+      recipients: raw.recipients,
+      startAt,
+      delayMs,
+      hourlyLimit: raw.hourlyLimit,
     });
 
     logger.info(
-      { userId: req.userId, batchId: result.batchId, count: result.scheduledCount },
+      { userId: req.userId, batchId: result.batchId, count: result.scheduledCount, senderId: raw.senderId },
       'Campaign schedule request processed',
     );
 

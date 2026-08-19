@@ -34,10 +34,11 @@ function recipientNameFromEmail(email: string): string {
     .join(' ');
 }
 
-// Pagination query schema
-const paginationSchema = z.object({
+// Pagination and filter query schema
+const querySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.string().optional(),
 });
 
 // ─── GET /emails/scheduled ────────────────────────────────────────────────────
@@ -48,15 +49,24 @@ export async function getScheduledEmails(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { page, limit } = paginationSchema.parse(req.query);
+    const { page, limit, status } = querySchema.parse(req.query);
     const skip = (page - 1) * limit;
+
+    const whereClause: {
+      campaign: { userId: string };
+      status?: 'PENDING' | 'SENT' | 'FAILED';
+    } = {
+      campaign: { userId: req.userId },
+      status: 'PENDING',
+    };
+
+    if (status && status.toUpperCase() === 'FAILED') {
+      whereClause.status = 'FAILED';
+    }
 
     const [rows, total] = await Promise.all([
       prisma.scheduledEmail.findMany({
-        where: {
-          campaign: { userId: req.userId },
-          status: 'PENDING',
-        },
+        where: whereClause,
         select: {
           id: true,
           recipientEmail: true,
@@ -69,10 +79,7 @@ export async function getScheduledEmails(
         take: limit,
       }),
       prisma.scheduledEmail.count({
-        where: {
-          campaign: { userId: req.userId },
-          status: 'PENDING',
-        },
+        where: whereClause,
       }),
     ]);
 
@@ -103,15 +110,27 @@ export async function getSentEmails(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { page, limit } = paginationSchema.parse(req.query);
+    const { page, limit, status } = querySchema.parse(req.query);
     const skip = (page - 1) * limit;
+
+    let statusCondition: { in: ('SENT' | 'FAILED')[] } | 'SENT' | 'FAILED' = {
+      in: ['SENT', 'FAILED'],
+    };
+
+    if (status) {
+      const upper = status.toUpperCase();
+      if (upper === 'SENT') statusCondition = 'SENT';
+      else if (upper === 'FAILED') statusCondition = 'FAILED';
+    }
+
+    const whereClause = {
+      campaign: { userId: req.userId },
+      status: statusCondition,
+    };
 
     const [rows, total] = await Promise.all([
       prisma.scheduledEmail.findMany({
-        where: {
-          campaign: { userId: req.userId },
-          status: { in: ['SENT', 'FAILED'] },
-        },
+        where: whereClause,
         select: {
           id: true,
           recipientEmail: true,
@@ -125,10 +144,7 @@ export async function getSentEmails(
         take: limit,
       }),
       prisma.scheduledEmail.count({
-        where: {
-          campaign: { userId: req.userId },
-          status: { in: ['SENT', 'FAILED'] },
-        },
+        where: whereClause,
       }),
     ]);
 

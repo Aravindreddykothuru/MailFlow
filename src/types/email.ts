@@ -24,6 +24,13 @@ export interface SentEmail extends EmailRecord {
   failureReason?: string;
 }
 
+export interface Sender {
+  id: string;
+  displayName: string;
+  email: string;
+  etherealUser: string;
+}
+
 export interface ScheduleRequest {
   subject: string;
   body: string;
@@ -32,6 +39,7 @@ export interface ScheduleRequest {
   startAt: string;
   delaySeconds: number;
   hourlyLimit: number;
+  senderId?: string;
 }
 
 export interface ScheduleResponse {

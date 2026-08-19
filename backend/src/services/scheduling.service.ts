@@ -6,6 +6,7 @@ import { logger } from '../config/logger';
 
 export interface ScheduleBatchParams {
   userId: string;
+  senderId?: string;
   subject: string;
   body: string;
   recipients: string[];
@@ -40,7 +41,7 @@ export interface ScheduleBatchResult {
 export async function scheduleEmailBatch(
   params: ScheduleBatchParams,
 ): Promise<ScheduleBatchResult> {
-  const { userId, subject, body, recipients, startAt, delayMs, hourlyLimit } = params;
+  const { userId, senderId, subject, body, recipients, startAt, delayMs, hourlyLimit } = params;
 
   const startMs = new Date(startAt).getTime();
   const now = Date.now();
@@ -49,8 +50,11 @@ export async function scheduleEmailBatch(
     throw new Error('startAt must be in the future');
   }
 
-  // ── Step 1: Resolve the default sender for this user ─────────────────────
-  const sender = await prisma.sender.findFirst({ where: { userId } });
+  // ── Step 1: Resolve sender for this user ─────────────────────────────────
+  let sender = senderId
+    ? await prisma.sender.findFirst({ where: { id: senderId, userId } })
+    : await prisma.sender.findFirst({ where: { userId } });
+
   if (!sender) {
     throw new Error(
       'No sender configured for this account. Please contact support.',

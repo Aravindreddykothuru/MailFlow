@@ -16,18 +16,19 @@ export interface RateLimitResult {
   allowed: boolean;
   /** Milliseconds until the next hour window opens. Only set when allowed=false. */
   nextWindowMs?: number;
+  /** Unix timestamp (ms) of the start of the next hour window. Only set when allowed=false. */
+  nextHourTimestamp?: number;
 }
 
 /**
  * Atomically increments the sender's hourly send counter and checks whether
  * the send is within the configured limit.
  *
- * If the limit is exceeded: returns allowed=false and nextWindowMs so the
- * worker can reschedule the job to the next hour boundary rather than dropping
- * or failing it.
+ * If the limit is exceeded: returns allowed=false and nextHourTimestamp so the
+ * worker can reschedule the job to the next hour boundary via job.moveToDelayed().
  *
  * If allowed: returns allowed=true. The counter has already been incremented,
- * so the caller must proceed with the send (do not call twice without sending).
+ * so the caller must proceed with the send.
  */
 export async function checkAndIncrement(
   senderId: string,
@@ -45,18 +46,17 @@ export async function checkAndIncrement(
 
   if (count > maxPerHour) {
     // Undo the increment so the count is accurate when the window resets.
-    // (Decrementing is best-effort — a crash here leaves the counter 1 high,
-    // which is acceptable: the job will be rescheduled, not dropped.)
     await redis.decr(key).catch(() => undefined);
 
-    const nextWindowMs = msUntilNextHour();
+    const nextHourTimestamp = getNextHourTimestamp();
+    const nextWindowMs = Math.max(0, nextHourTimestamp - Date.now());
 
     logger.warn(
-      { senderId, count, maxPerHour, nextWindowMs },
+      { senderId, count, maxPerHour, nextWindowMs, nextHourTimestamp },
       'Rate limit exceeded — job will be rescheduled to next hour',
     );
 
-    return { allowed: false, nextWindowMs };
+    return { allowed: false, nextWindowMs, nextHourTimestamp };
   }
 
   return { allowed: true };
@@ -71,11 +71,10 @@ function buildRateKey(senderId: string): string {
   return `rate:${senderId}:${bucket}`;
 }
 
-/** Milliseconds from now until the top of the next UTC hour. */
-function msUntilNextHour(): number {
-  const now = new Date();
-  const next = new Date(now);
+/** Returns the Unix timestamp (ms) at the top of the next UTC hour. */
+export function getNextHourTimestamp(): number {
+  const next = new Date();
   next.setUTCMinutes(0, 0, 0);
   next.setUTCHours(next.getUTCHours() + 1);
-  return next.getTime() - now.getTime();
+  return next.getTime();
 }

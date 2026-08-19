@@ -12,6 +12,7 @@ import { configureGoogleStrategy, getMe } from './controllers/auth.controller';
 import { authRouter } from './routes/auth.routes';
 import { campaignRouter } from './routes/campaign.routes';
 import { emailRouter } from './routes/email.routes';
+import { senderRouter } from './routes/sender.routes';
 import { requireAuth } from './middlewares/auth.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 
@@ -48,6 +49,7 @@ app.use(passport.initialize());
 app.use('/auth', authRouter);
 app.use('/campaigns', campaignRouter);
 app.use('/emails', emailRouter);
+app.use('/senders', senderRouter);
 app.get('/me', requireAuth, getMe);
 
 
