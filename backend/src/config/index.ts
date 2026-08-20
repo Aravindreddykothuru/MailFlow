@@ -24,6 +24,9 @@ const envSchema = z.object({
     .url()
     .default('http://localhost:4000/auth/google/callback'),
 
+  // Resend HTTP API (port 443 — immune to cloud SMTP port blocks)
+  RESEND_API_KEY: z.string().optional().default(''),
+
   // Real SMTP Provider (optional — if set, sends REAL emails to inboxes; if omitted, uses Ethereal test SMTP)
   SMTP_HOST: z.string().optional().default(''),
   SMTP_PORT: z.coerce.number().int().positive().optional().default(587),
